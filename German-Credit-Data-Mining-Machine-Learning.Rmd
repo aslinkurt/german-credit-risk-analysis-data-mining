@@ -1,0 +1,1133 @@
+
+---
+title: "German Credit Analysis"
+author: "Aadhithiya,Asli,Phani,Jefferson,Danyal"
+date: "`r Sys.Date()`"
+output: html_document
+---
+###
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/GBA6210/Rstudio")
+
+```
+
+### LOADING THE CSV FILE AND REQUIRED LIBRARIES.
+
+```{r}
+library(caret)
+library(ggplot2)
+library(rpart)
+library(pROC)
+library(nnet)
+
+```
+
+
+```{r}
+german_data <- read.csv("GermanCredit.csv", header = TRUE)
+```
+
+
+```{r}
+head(german_data)
+```
+
+
+### Checking the Structure of the datset
+```{r}
+str(german_data)
+
+```
+
+### Summary of the dataset.
+```{r}
+summary(german_data)
+```
+
+
+### Checking total amount of colum
+```{r}
+colSums(is.na(german_data))
+```
+
+### Checking distribution of responses
+
+```{r}
+table(german_data$RESPONSE)
+
+```
+
+
+### Transforming appropriate variables into categorical types 
+
+```{r}
+german_data$RESPONSE <- factor(german_data$RESPONSE, levels = c(0, 1), labels = c("Reject", "Accept")) #Asli: I changed to reject and accept credit
+german_data$CHK_ACCT <- as.factor(german_data$CHK_ACCT)
+german_data$HISTORY <- as.factor(german_data$HISTORY)
+german_data$EMPLOYMENT <- as.factor(german_data$EMPLOYMENT)
+german_data$SAV_ACCT <- as.factor(german_data$SAV_ACCT)
+german_data$JOB <- as.factor(german_data$JOB)
+```
+
+### Checking the structure of each variable's type
+
+```{r}
+str(german_data[, c("RESPONSE", "CHK_ACCT", "HISTORY", "EMPLOYMENT", "SAV_ACCT", "JOB")])
+```
+### Analyzing the columns for potential predictors
+
+```{r}
+library(ggplot2)
+
+# Helper function to create proportional bar plot for a categorical variable
+plot_categorical <- function(var_name, title_text) {
+  ggplot(german_data, aes_string(x = var_name, fill = "RESPONSE")) +
+    geom_bar(position = "fill") +
+    labs(title = title_text, x = var_name, y = "Proportion") +
+    scale_fill_manual(values = c("tomato", "turquoise3")) +
+    theme_minimal()
+}
+
+# Create plots for each categorical feature
+plot_categorical("CO.APPLICANT", "Credit Risk by Co-Applicant Status")
+plot_categorical("CHK_ACCT", "Credit Risk by Checking Account Status")
+plot_categorical("SAV_ACCT", "Credit Risk by Savings Account Status")
+plot_categorical("EMPLOYMENT", "Credit Risk by Employment Level")
+plot_categorical("HISTORY", "Credit Risk by Credit History")
+plot_categorical("JOB", "Credit Risk by Job Category")
+
+```
+
+
+```{r}
+ggplot(german_data, aes(x = EMPLOYMENT, fill = RESPONSE)) + 
+  geom_bar(position = "fill") + 
+  labs(title = "Credit Risk by Employment Status", x = "Employment", y = "Proportion") +
+  scale_fill_manual(values = c("red", "green"))
+```
+
+#After visualizing each key categorical variable against the target
+# variable (RESPONSE: Good vs. Bad credit), here’s what we learned:
+#
+# CHK_ACCT:
+#   - One of the strongest predictors of credit risk.
+#   - Applicants with CHK_ACCT = 0 (no checking account) had the highest
+#     proportion of BAD credit risk.
+#   - As CHK_ACCT level increases (1, 2, 3), Good credit proportion improves.
+#
+# SAV_ACCT:
+#   - Moderate signal observed.
+#   - More savings in the account (values 2, 3, 4) corresponds with a
+#     noticeably higher proportion of GOOD credit customers.
+#
+# CO.APPLICANT:
+#   - Slightly unexpected: those WITH a co-applicant had a higher share
+#     of BAD credit customers.
+#   - Possibly because riskier applicants require a co-signer.
+#
+# EMPLOYMENT:
+#   - Clear trend: the more years employed, the lower the chance of BAD credit.
+#   - Employment = financial stability. This is a good feature for modeling.
+#
+# HISTORY:
+#   - Very strong predictive signal.
+#   - Applicants with HISTORY = 4 (best history) had a large share of GOOD credit.
+#   - Those with HISTORY = 0 or 1 were mostly BAD credit. 
+#
+# JOB:
+#   - Weakest of the group. Minor differences between categories.
+#   - May be included in modeling, but only if it improves performance.
+#
+# summary:
+#   Use CHK_ACCT, HISTORY, and EMPLOYMENT in your final model — they show
+#   strong patterns related to credit outcomes.
+#   Consider including SAV_ACCT and CO.APPLICANT based on model testing.
+#   JOB is optional — can be dropped if not useful.
+
+
+
+```{r}
+
+library(ggplot2)
+# Histogram for AGE
+ggplot(german_data, aes(x = AGE)) +
+  geom_histogram(binwidth = 5, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Age", x = "Age", y = "Count") +
+  theme_minimal()
+
+```
+
+```{r}
+# Boxplot: AGE vs RESPONSE (Phani updated)
+ggplot(german_data, aes(x = RESPONSE, y = AGE, fill = RESPONSE)) +
+  geom_boxplot() +
+  labs(title = "Age vs Credit Risk", x = "Credit Risk", y = "Age") +
+  theme_minimal()
+
+```
+
+
+```{r}
+# ggplot(german_data, aes(x = AMOUNT)) + 
+#   geom_histogram(binwidth = 1000, fill = "purple", color = "black") +
+#   labs(title = "Distribution of Credit Amount", x = "Amount", y = "Count")
+
+ggplot(german_data, aes(x = AMOUNT)) + 
+  geom_histogram(binwidth = 1000, fill = "purple", color = "black", boundary = 0) +
+  scale_x_continuous(breaks = seq(0, 20000, by = 2000), labels = scales::comma) +
+  labs(title = "Distribution of Credit Amount", x = "Credit Amount ($)", y = "Count") +
+  theme_minimal()
+
+```
+#phani updated
+```{r}
+# Boxplot: AMOUNT vs RESPONSE
+ggplot(german_data, aes(x = RESPONSE, y = AMOUNT, fill = RESPONSE)) +
+  geom_boxplot() +
+  labs(title = "Credit Amount vs Credit Risk", x = "Credit Risk", y = "Amount") +
+  theme_minimal()
+
+```
+```{r}
+# Histogram for DURATION
+ggplot(german_data, aes(x = DURATION)) +
+  geom_histogram(binwidth = 3, fill = "orchid", color = "black") +
+  labs(title = "Distribution of Loan Duration", x = "Duration (months)", y = "Count") +
+  theme_minimal()
+
+```
+```{r}
+# Boxplot: DURATION vs RESPONSE
+ggplot(german_data, aes(x = RESPONSE, y = DURATION, fill = RESPONSE)) +
+  geom_boxplot() +
+  labs(title = "Loan Duration vs Credit Risk", x = "Credit Risk", y = "Duration") +
+  theme_minimal()
+
+```
+
+# -----------------------------------------------------------
+#
+# AGE
+#   - Histogram shows most applicants are in their 20s and 30s.
+#   - The distribution is right-skewed (fewer older applicants).
+#   - Boxplot reveals: On average, "Good" customers are slightly older
+#     than "Bad" ones.
+#   - Insight: Age is useful – younger applicants may have less stable
+#     credit behavior.
+#
+# AMOUNT (Loan Amount)
+#   - Histogram shows a very strong right-skew.
+#   - Most people request smaller loans (< $5000), but a few request
+#     very large amounts.
+#   - Boxplot shows: "Bad" customers tend to request **larger** amounts.
+#   - Insight: Loan size is a strong signal — bigger loans = higher risk.
+#
+# DURATION (Months)
+#   - Histogram: Common loan terms are 12, 18, 24, 36 months.
+#   - Boxplot shows: "Bad" credit risk customers usually have **longer durations**.
+#   - Insight: Long-term loans may add risk, especially when combined
+#     with large amounts.
+#
+#  Summary:
+#   These 3 numeric variables (AGE, AMOUNT, DURATION) are valuable for
+#   classification models. Each shows meaningful trends when compared
+#   against credit risk.
+#
+#   - AMOUNT and DURATION show the strongest separation between Good/Bad.
+#   - AGE also helps, especially in distinguishing more reliable applicants.
+
+
+### Creating correlation matrix to find correlation between variables 
+
+```{r}
+# Select only numeric variables
+numeric_vars <- german_data[, sapply(german_data, is.numeric)]
+
+# Compute correlation matrix
+cor_matrix <- cor(numeric_vars)
+
+# View it as a table
+round(cor_matrix, 2)
+```
+
+
+### Creating Heatmap of correlation matrix to identify strong, positive correlating variables
+
+```{r}
+
+#phani updated
+
+library(ggplot2)
+library(reshape2)
+
+# Melt correlation matrix to long format for ggplot
+melted_cor <- melt(cor_matrix)
+
+# Plot heatmap using ggplot
+ggplot(data = melted_cor, aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Correlation") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 10, hjust = 1)) +
+  coord_fixed() +
+  ggtitle("Correlation Matrix Heatmap")
+
+
+```
+
+### Finding Out Which Predictors are the Most Highly Correlated 
+
+```{r}
+#Select only numeric variables
+numeric_vars <- german_data[, sapply(german_data, is.numeric)]
+
+#Compute correlation matrix
+cor_matrix <- cor(numeric_vars)
+
+#View rounded correlation matrix
+round(cor_matrix, 2)
+
+#--------- Additional: Identify Strong, Moderate, Weak Correlations ---------
+#Convert correlation matrix into a tidy table
+library(reshape2)
+cor_table <- melt(cor_matrix)
+
+#Remove self-correlations (correlation of a variable with itself = 1)
+cor_table <- cor_table[cor_table$Var1 != cor_table$Var2, ]
+
+#Keep only one pair (A,B) and not both (A,B) and (B,A)
+cor_table <- cor_table[!duplicated(t(apply(cor_table[,1:2], 1, sort))), ]
+
+#Define strength based on absolute value of correlation
+cor_table$Strength <- cut(abs(cor_table$value),
+                          breaks = c(0, 0.3, 0.7, 1),
+                          labels = c("Weak", "Moderate", "Strong"))
+
+#Sort by strongest correlation first
+cor_table <- cor_table[order(-abs(cor_table$value)), ]
+
+#View the top correlations
+head(cor_table, 10)
+
+#Optional: See all strong correlations
+strong_corrs <- cor_table[cor_table$Strength == "Strong", ]
+moderate_corrs <- cor_table[cor_table$Strength == "Moderate", ]
+weak_corrs <- cor_table[cor_table$Strength == "Weak", ]
+
+#Print
+cat("\nStrong Correlations (>|0.7|):\n")
+print(strong_corrs)
+
+cat("\nModerate Correlations (0.3 - 0.7):\n")
+print(moderate_corrs)
+
+cat("\nWeak Correlations (<0.3):\n")
+print(weak_corrs)
+```
+
+# Correlation Analysis Summary
+# 
+# In this analysis, we visualized the correlation matrix of all numeric variables using a heatmap.
+# This helped us understand how features relate to each other and identify multicollinearity risks.
+# 
+# Key Takeaways:
+# - DURATION and AMOUNT show a moderate positive correlation (~0.62), which is expected — longer durations often involve larger loan amounts.
+# - INSTALL_RATE and AMOUNT are negatively correlated (~ -0.27), meaning loans with higher amounts tend to have lower installment rates.
+# - AGE shows mild positive correlation with variables like PRESENT_RESIDENT and NUM_CREDITS — older people tend to stay longer and may have more credit experience.
+# - OWN_RES and RENT are highly negatively correlated (~ -0.74), which makes sense: you usually don’t own and rent at the same time.
+# - MALE_SINGLE and MALE_MAR_or_WID are negatively related (~ -0.35), since these categories are logically exclusive.
+# 
+#  Modeling Insight:
+# - No pairs were found with high correlation above 0.85, so no immediate need to drop variables.
+# - However, it’s still good to check multicollinearity in logistic regression using VIF (Variance Inflation Factor).
+# 
+# Heatmap helps us visually spot variables that may be too similar whereas avoiding that improves model clarity!
+
+
+
+### Creating and partitioning testing and validation sets
+
+```{r}
+# Load required libraries
+library(caret)  # For data partitioning and modeling
+
+# Step 1: Split the data
+set.seed(123)
+train_index <- createDataPartition(german_data$RESPONSE, p = 0.7, list = FALSE)
+train_data <- german_data[train_index, ]
+test_data <- german_data[-train_index, ]
+
+```
+# We partition the data using a 70/30 ratio
+
+
+
+### Creating and training logistic regression model
+
+```{r}
+# Step 2: Train logistic regression model
+log_model <- glm(RESPONSE ~ ., data = train_data, family = binomial)
+
+# Step 3: Manually compute VIFs
+# We'll build a linear model for each predictor against all others
+compute_vif <- function(data) {
+  numeric_data <- data[, sapply(data, is.numeric)]
+  vif_values <- sapply(names(numeric_data), function(var){
+    predictors <- setdiff(names(numeric_data), var)
+    formula <- as.formula(paste(var, "~", paste(predictors, collapse = "+")))
+    r2 <- summary(lm(formula, data = numeric_data))$r.squared
+    if (is.na(r2)) return(NA)
+    return(1 / (1 - r2))
+  })
+  return(vif_values)
+}
+
+manual_vif <- compute_vif(train_data)
+print(manual_vif)
+
+# (Student Note: VIF > 5 or 10 suggests the variable is highly collinear with others and might be dropped)
+
+
+```
+# Based on manual VIF analysis, most predictors show no multicollinearity issues.
+# However, 'RENT' and 'OWN_RES' show moderate collinearity (VIF ~5-6), likely due to their inverse relationship.
+# We might considerall the variables in model as nothing is high.
+
+
+
+### Generating confusion matrices for the testing and validation sets for logistic regression model
+
+```{r}
+
+
+# Remove NA rows
+german_data <- na.omit(german_data)
+
+# Split the data
+set.seed(123)
+train_indices <- createDataPartition(german_data$RESPONSE, p = 0.7, list = FALSE)
+train_data <- german_data[train_indices, ]
+test_data <- german_data[-train_indices, ]
+
+# Train logistic regression model
+log_model <- train(RESPONSE ~ ., data = train_data, method = "glm", family = "binomial")
+
+# Predict on train and test data
+train_preds <- predict(log_model, newdata = train_data)
+test_preds <- predict(log_model, newdata = test_data)
+
+# Generate confusion matrices
+conf_matrix_train <- confusionMatrix(train_preds, train_data$RESPONSE, positive = "Accept")
+conf_matrix_test <- confusionMatrix(test_preds, test_data$RESPONSE, positive = "Accept")
+
+# Print results
+print("CONFUSION MATRIX: TRAINING DATA")
+print(conf_matrix_train)
+
+print("CONFUSION MATRIX: TEST/VALIDATION DATA")
+print(conf_matrix_test)
+
+
+
+
+```
+
+# Accuracy is decent (73%), but specificity is low (47.8%).
+# Model struggles to correctly catch "Rejects" (bad credit customers).
+# Sensitivity is good (83.8%), meaning it is good at finding Accepts (good customers).
+# 
+# Kappa = 0.33, meaning there's moderate agreement — better than random, but not too great.
+# 
+# Balanced Accuracy is 65.8%, so when considering both Accept and Reject classes equally, it's fair but could be improved.
+# 
+#  In a real scenario, we'd be approving some risky (bad) customers, which could cause financial loss.
+
+### Test Code Using Threshold of 0.3
+
+```{r}
+# Remove NA rows
+german_data <- na.omit(german_data)
+
+# Split the data
+set.seed(123)
+train_indices <- createDataPartition(german_data$RESPONSE, p = 0.7, list = FALSE)
+train_data <- german_data[train_indices, ]
+test_data <- german_data[-train_indices, ]
+
+# Train logistic regression model
+log_model <- train(RESPONSE ~ ., data = train_data, method = "glm", family = "binomial")
+
+# Set custom threshold
+threshold <- 0.3
+
+# Predict probabilities on train and test data
+train_probs <- predict(log_model, newdata = train_data, type = "prob")[, "Accept"]
+test_probs <- predict(log_model, newdata = test_data, type = "prob")[, "Accept"]
+
+# Apply threshold to get class predictions
+train_preds <- ifelse(train_probs >= threshold, "Accept", "Reject")
+test_preds <- ifelse(test_probs >= threshold, "Accept", "Reject")
+
+# Generate confusion matrices
+conf_matrix_train <- confusionMatrix(factor(train_preds, levels = c("Reject", "Accept")), 
+                                     train_data$RESPONSE, positive = "Accept")
+conf_matrix_test <- confusionMatrix(factor(test_preds, levels = c("Reject", "Accept")), 
+                                    test_data$RESPONSE, positive = "Accept")
+
+# Print results
+print("CONFUSION MATRIX: TRAINING DATA (threshold = 0.3)")
+print(conf_matrix_train)
+
+print("CONFUSION MATRIX: TEST/VALIDATION DATA (threshold = 0.3)")
+print(conf_matrix_test)
+
+```
+
+
+-----------------------------------------------------------------------------------------------------------------------------------
+#Class imbalance (70% Accept vs 30% Reject) is skewing model behavior.
+
+-----------------------------------------------------------------------------------------------------------------------------------
+
+#Training set and validation set is mostly accurate (80% vs 71.5% accuracy)
+
+# Sensitivity on each set is very strong (89% vs 82.9% sensitivity) Both sets are strong at correctly identifying good credit clients
+
+# Specificity is relatively low (57.9 vs 45%) Both sets seem so struggle at properly predicting bad credit clients.
+
+# Conclusion: The model is conservative about rejecting people — it's typically classifying "Accept" than "Reject."
+#In business terms, the model minimizes missed opportunity (high sensitivity) but takes on more risk (low specificity).
+#This might be fine in certain lending contexts (e.g., when offering low-value or secured loans), but not ideal for high-risk or high-value credit products.
+
+
+
+### Generating k-nn model, plotting best k value, plotting its accuracy, and creating confusion matrix for both the testing and validation set of the k-nn model
+
+```{r}
+library(caret)
+library(class)
+
+# Normalize numeric features
+preProcValues <- preProcess(train_data, method = c("center", "scale"))
+train_norm <- predict(preProcValues, train_data)
+test_norm <- predict(preProcValues, test_data)
+
+# Set up training control for cross-validation
+ctrl <- trainControl(method = "cv", number = 10)
+
+# Tune k from 1 to 20
+set.seed(123)
+knn_model <- train(RESPONSE ~ ., data = train_norm, 
+                   method = "knn", 
+                   trControl = ctrl,
+                   tuneGrid = expand.grid(k = 1:20))
+
+# Best k value
+print(knn_model$bestTune)
+
+# Plot accuracy vs k
+plot(knn_model)
+
+# Predictions
+train_preds_knn <- predict(knn_model, newdata = train_norm)
+test_preds_knn <- predict(knn_model, newdata = test_norm)
+
+# Confusion matrices
+conf_matrix_train_knn <- confusionMatrix(train_preds_knn, train_norm$RESPONSE, positive = "Accept")
+conf_matrix_test_knn <- confusionMatrix(test_preds_knn, test_norm$RESPONSE, positive = "Accept")
+
+# Print results
+print("CONFUSION MATRIX: TRAINING DATA (KNN)")
+print(conf_matrix_train_knn)
+
+print("CONFUSION MATRIX: TESTING DATA (KNN)")
+print(conf_matrix_test_knn)
+
+# Optional: See class distribution of test predictions
+print("KNN Test Prediction Breakdown:")
+print(table(test_preds_knn))
+
+
+```
+
+
+#Strengths:
+
+#Excellent recall for the positive class (Accept).
+
+#Decent overall accuracy and precision.
+
+# Weaknesses:
+
+#Severe imbalance in class prediction — Reject class is barely captured.
+
+#Very low specificity indicates high false-positive rate.
+
+#KNN seems biased toward the dominant class (Accept), which is common in imbalanced datasets.
+-----------------------------------------------------------------------------------------------------------------------------------
+
+# Each dot on the line represents how accurate the model is when using a specific number of neighbors to classify credit applicants.
+# From the chart, the highest accuracy for the knn chart is at k = 15, or 15 neighbors 
+#It is the best amount of neighbors where it avoids overfit and underfitting
+
+
+
+### Creating Decision Tree Model as well as generating confusion matrices for its training and validation sets
+
+```{r}
+library(rpart)
+
+# Train decision tree model
+tree_model <- rpart(RESPONSE ~ ., data = train_data, method = "class")
+
+# Predict
+train_preds_tree <- predict(tree_model, train_data, type = "class")
+test_preds_tree <- predict(tree_model, test_data, type = "class")
+
+# Confusion matrices
+conf_matrix_train_tree <- confusionMatrix(train_preds_tree, train_data$RESPONSE, positive = "Accept")
+conf_matrix_test_tree <- confusionMatrix(test_preds_tree, test_data$RESPONSE, positive = "Accept")
+
+# Print results
+print("CONFUSION MATRIX: TRAINING DATA (Decision Tree)")
+print(conf_matrix_train_tree)
+
+print("CONFUSION MATRIX: TEST/VALIDATION DATA (Decision Tree)")
+print(conf_matrix_test_tree)
+
+
+```
+
+
+```{r}
+# Visualize the decision tree using base R
+plot(tree_model, uniform = TRUE, margin = 0.1)
+text(tree_model, use.n = TRUE, all = TRUE, cex = 0.6)
+
+```
+
+
+# Confusion Matrix Evaluation: Decision Tree
+#
+#Training Set Performance:
+#   - Accuracy: **83.12%**, which is higher than baseline (70%).
+#   - Sensitivity (Recall for Accept): **93.9%** – Model captures most of the actual "Accept" cases.
+#   - Specificity (Recall for Reject): **57.9%** – More moderate, could mean some rejections are misclassified.
+#   - Kappa: **0.563** – Moderate agreement beyond chance.
+#   - Insight: The tree fits the training data well, with slight imbalance in rejecting actual bad credit.
+#
+#Validation/Test Set Performance:
+#   - Accuracy: **72.5%** – Reasonable generalization to new data.
+#   - Sensitivity: **85.7%** – Still strong at identifying "Accept" class.
+#   - Specificity: **41.7%** – Weaker on catching true "Reject" cases.
+#   - Kappa: **0.295** – Lower agreement, suggesting more caution needed.
+#   - Balanced Accuracy: **63.7%** – Reflects the imbalance in classification.
+#
+# Interpretation:
+#   - The decision tree performs fairly well overall, especially on detecting "Accept".
+#   - But the relatively lower specificity suggests potential risk in mistakenly accepting risky applicants.
+#   - Might consider pruning or using ensemble models (e.g., Random Forest) to improve generalization.
+
+
+### Creating and Training Neural Network + Generating Confusion Matrices
+
+```{r}
+# Load necessary libraries
+library(caret)
+library(nnet)
+
+# Normalize numeric data (Neural nets benefit from scaling)
+preProc_nn <- preProcess(train_data, method = c("center", "scale"))
+train_nn <- predict(preProc_nn, train_data)
+test_nn <- predict(preProc_nn, test_data)
+
+# Train the Neural Network
+set.seed(123)
+nn_model <- train(RESPONSE ~ ., data = train_nn, method = "nnet",
+                  trControl = trainControl(method = "cv", number = 5, classProbs = TRUE),
+                  tuneLength = 5,
+                  trace = FALSE,
+                  MaxNWts = 10000, maxit = 200)
+
+nn_model$bestTune
+
+# Predict on train and test
+train_preds_nn <- predict(nn_model, newdata = train_nn)
+test_preds_nn <- predict(nn_model, newdata = test_nn)
+
+# Confusion Matrices
+conf_matrix_train_nn <- confusionMatrix(train_preds_nn, train_nn$RESPONSE, positive = "Accept")
+conf_matrix_test_nn <- confusionMatrix(test_preds_nn, test_nn$RESPONSE, positive = "Accept")
+
+# Output results
+print("CONFUSION MATRIX: TRAINING DATA (Neural Net)")
+print(conf_matrix_train_nn)
+
+print("CONFUSION MATRIX: TEST/VALIDATION DATA (Neural Net)")
+print(conf_matrix_test_nn)
+
+
+
+
+
+```
+
+```{r}
+# Load necessary library
+library(neuralnet)
+
+# Define top predictors based on logistic regression results
+top_vars <- c("CHK_ACCT", "DURATION", "AMOUNT", "HISTORY", "SAV_ACCT", "EMPLOYMENT", "INSTALL_RATE", "FOREIGN")
+
+# Subset and prepare data
+train_subset <- train_nn[, c(top_vars, "RESPONSE")]
+
+# One-hot encode categorical variables
+X <- model.matrix(RESPONSE ~ . - 1, data = train_subset)  # remove intercept
+y <- as.numeric(train_subset$RESPONSE == "Accept")
+nn_input <- data.frame(X, RESPONSE = y)
+
+# Train the neural network with two hidden layers (5 and 3 neurons)
+nn_small <- neuralnet(RESPONSE ~ ., 
+                      data = nn_input,
+                      hidden = 5,   # <-- two hidden layers
+                      linear.output = TRUE)
+
+# Plot it with weights
+plot(nn_small, rep = "best", show.weights = TRUE)
+
+
+```
+
+
+#The neural network model performs well on training and reasonably on validation, especially in identifying good credit (Accept class).
+
+#It shows some overfitting, as validation accuracy is lower and Kappa drops.
+
+
+
+
+### Creating ROC Curve in Order to Compare all Models Against Each Other
+
+```{r}
+library(pROC)
+
+# Compute probabilities for each model
+logistic_probs <- predict(log_model, newdata = test_data, type = "prob")[, "Accept"]
+knn_probs <- predict(knn_model, newdata = test_norm, type = "prob")[, "Accept"]
+tree_probs <- predict(tree_model, newdata = test_data, type = "prob")[, "Accept"]
+nn_probs <- predict(nn_model, newdata = test_data, type = "prob")[, "Accept"]
+
+# Actual labels
+actual <- ifelse(test_data$RESPONSE == "Accept", 1, 0)
+
+# ROC curves
+roc_log <- roc(actual, logistic_probs)
+roc_knn <- roc(actual, knn_probs)
+roc_tree <- roc(actual, tree_probs)
+roc_nn <- roc(actual, nn_probs)
+
+# Plot
+plot(roc_log, col = "blue", lwd = 2, main = "ROC Curve Comparison")
+plot(roc_knn, col = "green", lwd = 2, add = TRUE)
+plot(roc_tree, col = "purple", lwd = 2, add = TRUE)
+plot(roc_nn, col = "orange", lwd = 2, add = TRUE)
+legend("bottomright", legend = c("Logistic", "KNN", "Decision Tree", "Neural Net"),
+       col = c("blue", "green", "purple", "orange"), lwd = 2)
+
+# Print AUC values
+cat("AUC - Logistic Regression:", auc(roc_log), "\n")
+cat("AUC - KNN:", auc(roc_knn), "\n")
+cat("AUC - Decision Tree:", auc(roc_tree), "\n")
+cat("AUC - Neural Network:", auc(roc_nn), "\n")
+
+
+```
+#Conclusion:
+#    - Based on the ROC curves, the **Decision Tree and Logistic Regression** models are preferred choices for classification performance on this dataset.
+
+
+
+
+### Visualizing AUC Charts
+
+```{r}
+# Load required packages
+library(pROC)
+
+# Logistic Regression
+logit_probs <- predict(log_model, newdata = test_data, type = "prob")[, "Accept"]
+logit_auc <- roc(response = test_data$RESPONSE, predictor = logit_probs, levels = c("Reject", "Accept"))
+
+# KNN
+knn_probs <- predict(knn_model, newdata = test_norm, type = "prob")[, "Accept"]
+knn_auc <- roc(response = test_data$RESPONSE, predictor = knn_probs, levels = c("Reject", "Accept"))
+
+# Decision Tree
+tree_probs <- predict(tree_model, newdata = test_data, type = "prob")[, "Accept"]
+tree_auc <- roc(response = test_data$RESPONSE, predictor = tree_probs, levels = c("Reject", "Accept"))
+
+# Neural Network
+nnet_probs <- predict(nn_model, newdata = test_nn, type = "prob")[, "Accept"]
+nnet_auc <- roc(response = test_data$RESPONSE, predictor = nnet_probs, levels = c("Reject", "Accept"))
+
+# Tabulate the AUCs
+auc_results <- data.frame(
+  Model = c("Logistic Regression", "K-Nearest Neighbors", "Decision Tree", "Neural Network"),
+  AUC = c(logit_auc$auc, knn_auc$auc, tree_auc$auc, nnet_auc$auc)
+)
+
+print(auc_results)
+
+
+
+```
+
+#  AUC Score Summary (Area Under ROC Curve):
+# - Logistic Regression AUC: Highest, best overall separation of classes.
+# - Decision Tree & Neural Net: Competitive but slightly lower.
+# - KNN: Lowest AUC, likely impacted by class imbalance or parameter tuning.
+#
+# conclusion:
+# Logistic Regression is the most reliable in terms of discrimination ability.
+# ROC and AUC analysis confirm it’s the strongest performer on this dataset.
+
+
+# Accuracy measures how many predictions we got right after setting a decision threshold, while AUC measures how well we ranked positives higher than negatives, no matter where we set the cutoff — meaning AUC focuses on the model’s ability to separate the two groups, while accuracy focuses on final decisions. Focuses on the true-positives.
+
+
+### Creating Bar Charts to Compare AUC Scores for Each Model
+
+```{r}
+library(pROC)
+library(ggplot2)
+
+#Compute AUCs directly from model predictions
+logistic_probs <- predict(log_model, newdata = test_data, type = "prob")[, "Accept"]
+knn_probs <- predict(knn_model, newdata = test_norm, type = "prob")[, "Accept"]
+tree_probs <- predict(tree_model, newdata = test_data, type = "prob")[, "Accept"]
+nn_probs <- predict(nn_model, newdata = test_nn, type = "prob")[, "Accept"]
+
+#Actual binary labels (1 = Accept, 0 = Reject)
+actual <- ifelse(test_data$RESPONSE == "Accept", 1, 0)
+
+#Calculate AUCs
+logit_auc <- auc(roc(actual, logistic_probs))
+knn_auc <- auc(roc(actual, knn_probs))
+tree_auc <- auc(roc(actual, tree_probs))
+nn_auc <- auc(roc(actual, nn_probs))
+
+#Build data frame dynamically
+auc_values <- data.frame(
+  Model = factor(c("Logistic Regression", "KNN", "Decision Tree", "Neural Network"),
+                 levels = c("Logistic Regression", "KNN", "Decision Tree", "Neural Network")),
+  AUC = c(logit_auc, knn_auc, tree_auc, nn_auc)
+)
+
+#Plot dynamically computed AUCs
+ggplot(auc_values, aes(x = Model, y = AUC, fill = Model)) +
+  geom_bar(stat = "identity", width = 0.6, color = "black") +
+  geom_text(aes(label = round(AUC, 3)), vjust = -0.5, size = 4) +
+  labs(title = "Model Performance Comparison via AUC Scores",
+       x = "Model",
+       y = "AUC Score") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 0, size = 11),
+        plot.title = element_text(face = "bold", size = 14))
+```
+
+
+# Model Comparison Comments
+
+# This plot visualizes the AUC (Area Under the Curve) scores of four classification models.
+# Higher AUC indicates better ability to distinguish between classes.
+
+# Logistic Regression achieved the highest AUC score of 0.755, suggesting strong classification performance.
+# The Neural Network also performed well with an AUC of 0.752, indicating it may be a viable alternative.
+# Decision Tree had a moderate performance with an AUC of 0.698.
+# KNN performed the worst with an AUC of 0.672, suggesting that it may not be suitable for this dataset.
+
+# Overall, Logistic Regression appears to be the most effective model for this classification task.
+
+
+### Creating Profit Margin Chart in Order to Compare Each Model's Predictive Ability to Correctly Classify Clients to Generate the Highest Net Profit.
+
+```{r}
+#Define threshold and profit/cost values
+threshold <- 0.3
+gain_per_good <- 100
+cost_per_bad <- 200
+
+#Logistic Regression probabilities and predictions
+logistic_probs <- predict(log_model, newdata = test_data, type = "prob")[, "Accept"]
+logistic_preds <- ifelse(logistic_probs >= threshold, "Accept", "Reject")
+logistic_cm <- confusionMatrix(factor(logistic_preds, levels = c("Reject", "Accept")), 
+                               test_data$RESPONSE, positive = "Accept")
+logistic_tp <- logistic_cm$table[2, 2]
+logistic_fp <- logistic_cm$table[1, 2]
+logistic_profit <- (logistic_tp * gain_per_good) - (logistic_fp * cost_per_bad)
+
+#Decision Tree
+tree_probs <- predict(tree_model, newdata = test_data, type = "prob")[, "Accept"]
+tree_preds <- ifelse(tree_probs >= threshold, "Accept", "Reject")
+tree_cm <- confusionMatrix(factor(tree_preds, levels = c("Reject", "Accept")), 
+                           test_data$RESPONSE, positive = "Accept")
+tree_tp <- tree_cm$table[2, 2]
+tree_fp <- tree_cm$table[1, 2]
+tree_profit <- (tree_tp * gain_per_good) - (tree_fp * cost_per_bad)
+
+#Neural Network
+nn_probs <- predict(nn_model, newdata = test_nn, type = "prob")[, "Accept"]
+nn_preds <- ifelse(nn_probs >= threshold, "Accept", "Reject")
+nn_cm <- confusionMatrix(factor(nn_preds, levels = c("Reject", "Accept")), 
+                         test_nn$RESPONSE, positive = "Accept")
+nn_tp <- nn_cm$table[2, 2]
+nn_fp <- nn_cm$table[1, 2]
+nn_profit <- (nn_tp * gain_per_good) - (nn_fp * cost_per_bad)
+
+
+knn_preds <- ifelse(knn_probs >= threshold, "Accept", "Reject")
+knn_cm <- confusionMatrix(factor(knn_preds, levels = c("Reject", "Accept")),
+                          test_data$RESPONSE, positive = "Accept")
+knn_accuracy <- conf_matrix_test_knn$overall['Accuracy']
+knn_sensitivity <- conf_matrix_test_knn$byClass['Sensitivity']
+knn_tp <- conf_matrix_test_knn$table[2, 2]
+knn_fp <- conf_matrix_test_knn$table[1, 2]
+knn_profit <- (knn_tp * gain_per_good) - (knn_fp * cost_per_bad)
+
+#Final Summary Table
+comparison_table <- data.frame(
+  Model = c("Logistic Regression", "Classification Tree", "Neural Net", "K-Nearest Neighbors"),
+  Accuracy = c(logistic_cm$overall['Accuracy'], tree_cm$overall['Accuracy'], nn_cm$overall['Accuracy'], knn_accuracy),
+  Sensitivity = c(logistic_cm$byClass['Sensitivity'], tree_cm$byClass['Sensitivity'], nn_cm$byClass['Sensitivity'], knn_sensitivity),
+  Specificity = c(logistic_cm$byClass['Specificity'], tree_cm$byClass['Specificity'], 
+                  nn_cm$byClass['Specificity'], knn_cm$byClass['Specificity']),
+  True_Positives = c(logistic_tp, tree_tp, nn_tp, knn_tp),
+  False_Positives = c(logistic_fp, tree_fp, nn_fp, knn_fp),
+  Net_Profit = c(logistic_profit, tree_profit, nn_profit, knn_profit)
+)
+
+print(comparison_table)
+```
+
+
+# Net Profit Threshold = 0.3:
+#If the model predicts that a customer has at least a 30% chance of being good (Accept), they will be approved.
+# Lowering the threshold from 0.5 to 0.3 makes the model more lenient, approving more applicants — good for growth, riskier for defaults.
+
+#gain_per_good = 100:
+#If you approve a good customer, the company earns $100 (e.g., through interest payments or fees).
+
+#cost_per_bad = 500:
+#If you approve a bad customer, it costs the company $200 (e.g., from a default or late payments).
+
+
+### Creating Bar Chart to Compare Each Model's Predictive Ability to Generate the Highest Net Profit 
+
+```{r}
+library(ggplot2)
+
+# Assuming you've already computed these net profits:
+model_profits <- data.frame(
+  Model = c("Logistic Regression", "Classification Tree", "Neural Net", "K-Nearest Neighbors"),
+  Net_Profit = c(logistic_profit, tree_profit, nn_profit, knn_profit)
+)
+
+# Plot total net profit per model
+ggplot(model_profits, aes(x = Model, y = Net_Profit, fill = Model)) +
+  geom_bar(stat = "identity", width = 0.6, color = "black") +
+  geom_text(aes(label = scales::dollar(Net_Profit)), vjust = -0.5, size = 4) +
+  scale_y_continuous(labels = scales::dollar_format(prefix = "$")) +
+  labs(title = "Total Net Profit per Model (Validation Set)",
+       x = "Model",
+       y = "Net Profit") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 0, size = 11),
+        plot.title = element_text(face = "bold", size = 14))
+
+
+```
+
+
+
+### Decile-Wise Lift Chart (Logistic Regression)
+```{r}
+library(dplyr)
+
+# Create validation set for decile analysis (Logistic Regression)
+validation <- test_data %>%
+  mutate(
+    Prob = logistic_probs,
+    Actual = ifelse(RESPONSE == "Accept", 1, 0),
+    Profit = ifelse(RESPONSE == "Accept", gain_per_good, -cost_per_bad)
+  ) %>%
+  arrange(desc(Prob))
+
+#Recalculate decile_summary if not already done
+validation$Decile <- ntile(validation$Prob, 10)
+decile_summary <- validation %>%
+  group_by(Decile) %>%
+  summarise(Total_Profit = sum(Profit)) %>%
+  arrange(desc(Decile))
+
+#Basic chart
+ggplot(decile_summary, aes(x = reorder(factor(Decile), -Decile), y = Total_Profit)) +
+  geom_col(fill = ifelse(decile_summary$Total_Profit >= 0, "seagreen3", "tomato"), color = "black") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Profit by Decile (Logistic Regression)",
+       x = "Decile (Higher = Better Score)",
+       y = "Total Profit") +
+  theme_minimal()
+```
+
+#This chart breaks up all applicants into 10 groups (deciles) based on how confident the logistic regression model was that they should be approved.
+
+#Decile 10: People the model was most confident about
+
+#Decile 1: People the model was least confident about
+
+#Each bar shows the total profit the company would make from lending to applicants in that group.
+
+#Green bars = profitable groups
+
+#Red bars = groups that lose money
+
+# What It Means
+#Top-scoring applicants (Deciles 10 to 6) are consistently profitable — the model's predictions are working well here.
+
+#Bottom-scoring applicants (Deciles 1 to 4) lead to big losses — too many risky approvals.
+
+# This tells us: Focus lending on the top deciles, and avoid or reconsider the lower ones to maximize profit.
+
+
+```{r}
+options(scipen = 999)
+summary(log_model$finalModel)
+
+```
+
+# What This Table Represents (General Explanation)
+#This table shows the influence of different customer characteristics (predictor variables) on whether a credit applicant is accepted or rejected.
+
+#The model learns from data and assigns:
+
+#Positive values (called estimates or coefficients): these increase the chance of approval
+
+#Negative values: these decrease the chance of approval
+
+#It also tests if these influences are statistically significant.
+
+#CHK_ACCT3	Strong checking account balance	Very strong positive (***)
+#SAV_ACCT4	High savings account balance	Strong positive (***)
+#CHK_ACCT2	Moderate checking account balance	Strong positive (**)
+#HISTORY4	Very good credit repayment history	Moderate positive (**)
+#EMPLOYMENT3	Mid-range employment length	Positive (*)
+#FOREIGN	Applicant is a foreign worker	Positive (*)
+
+
+### Optimal Cutoff for Maximum Profit (Logistic Regression)
+```{r}
+thresholds <- seq(0.3, 1, by = 0.05)
+profits <- sapply(thresholds, function(t) {
+  preds <- ifelse(logistic_probs >= t, "Accept", "Reject")
+  cm <- confusionMatrix(factor(preds, levels = c("Reject", "Accept")), test_data$RESPONSE, positive = "Accept")
+  tp <- cm$table[2, 2]
+  fp <- cm$table[1, 2]
+  (tp * gain_per_good) - (fp * cost_per_bad)
+})
+
+optimal_cutoff <- thresholds[which.max(profits)]
+max_profit <- max(profits)
+
+cat("Optimal Cutoff:", optimal_cutoff, "with Maximum Profit:", max_profit, "\n")
+
+profit_df <- data.frame(Threshold = thresholds, Profit = profits)
+
+ggplot(profit_df, aes(x = Threshold, y = Profit)) +
+  geom_line(color = "darkgreen", size = 1.2) +
+  geom_point(aes(x = optimal_cutoff, y = max_profit), color = "red", size = 3) +
+  labs(title = "Profit vs. Probability Threshold (Logistic Regression)", x = "Threshold", y = "Net Profit") +
+  theme_minimal()
+```
+```{r}
+library(caret)
+library(ggplot2)
+
+#Define thresholds and initialize vectors
+thresholds <- seq(0.1, 0.9, by = 0.1)
+gain_per_good <- 100
+cost_per_bad <- 200
+
+#Store metrics
+results <- data.frame()
+
+#Loop through thresholds
+for (t in thresholds) {
+  preds <- ifelse(logistic_probs >= t, "Accept", "Reject")
+  cm <- confusionMatrix(factor(preds, levels = c("Reject", "Accept")), test_data$RESPONSE, positive = "Accept")
+
+  accuracy <- cm$overall['Accuracy']
+  sensitivity <- cm$byClass['Sensitivity']
+  specificity <- cm$byClass['Specificity']
+
+  tp <- cm$table[2, 2]
+  fp <- cm$table[1, 2]
+  profit <- (tp * gain_per_good) - (fp * cost_per_bad)
+
+  results <- rbind(results, data.frame(
+    Threshold = t,
+    Accuracy = accuracy,
+    Sensitivity = sensitivity,
+    Specificity = specificity,
+    Net_Profit = profit
+  ))
+}
+
+#Print table
+print(results)
+
+#Plot Net Profit vs Threshold
+ggplot(results, aes(x = Threshold)) +
+  geom_line(aes(y = Net_Profit), color = "darkgreen", size = 1.2) +
+  geom_point(aes(y = Net_Profit), color = "darkgreen", size = 2) +
+  labs(title = "Net Profit vs Threshold", y = "Net Profit") +
+  theme_minimal()
+
+#Optional: Plot all metrics
+library(reshape2)
+results_melted <- melt(results, id.vars = "Threshold")
+
+ggplot(results_melted, aes(x = Threshold, y = value, color = variable)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  labs(title = "Model Metrics vs Threshold", y = "Metric Value") +
+  theme_minimal()
+```
+
+
+
+
+# This Chart Represents: “At what confidence level should we approve someone for credit to make the most profit?”
+
+#The X-axis shows the probability threshold: how confident the model needs to be before approving a customer.
+
+#The Y-axis shows the total net profit made at that threshold — balancing money gained from good approvals and money lost from bad ones.
+
+# Red Point = Sweet Spot
+#The red dot marks the optimal threshold, where profit is highest.
+
+#In this case, that happens at a low threshold (around 0.1–0.15), meaning:
+
+#Approving more people — even with lower certainty — leads to the most overall profit.
+
+# Why Profit Drops After That
+#As you raise the threshold (require more confidence to approve someone), you approve fewer people.
+
+#While you reduce bad approvals (less loss), you also miss out on good customers, reducing profit.

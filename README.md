@@ -49,5 +49,5 @@ To replicate the results:
 
 1. Clone this repo:
    ```bash
-   git clone https://github.com/yourusername/german-credit-risk-analysis .git
+   git clone https://github.com/aslinkurt/german-credit-risk-analysis-data-mining .git
 

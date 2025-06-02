@@ -4,8 +4,6 @@ This project explores and evaluates multiple data mining techniques to predict c
 
 ## 📊 Project Overview
 
-- **Course**: GBA 6210 – Data Mining for Business Analytics  
-- **Team**: Group 10  
 - **Dataset**: [UCI German Credit Dataset](https://archive.ics.uci.edu/ml/datasets/statlog+(german+credit+data))
 - **Observations**: 1000 applicants  
 - **Variables**: 30 predictors + 1 response variable (Good/Poor Credit)
@@ -23,6 +21,8 @@ This project explores and evaluates multiple data mining techniques to predict c
 3. **Neural Networks**
    - Multi-layer perceptron model
    - Model performance on unseen data
+  
+4. K-NN
 
 ## 💡 Key Findings
 
